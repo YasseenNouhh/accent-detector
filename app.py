@@ -25,12 +25,19 @@ try:
     from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2FeatureExtractor, pipeline
     import librosa
     import soundfile as sf
-    import torch
-    import numpy as np
+    try:
+        import torch
+        import numpy as np
+        TORCH_AVAILABLE = True
+    except ImportError:
+        import numpy as np
+        TORCH_AVAILABLE = False
+        print("⚠️ PyTorch not available - using feature-based accent detection only")
     ACCENT_DETECTION_AVAILABLE = True
     print("✅ Accent detection libraries loaded successfully")
 except ImportError as e:
     ACCENT_DETECTION_AVAILABLE = False
+    TORCH_AVAILABLE = False
     print(f"❌ Accent detection not available: {e}")
 
 # Whisper imports - Use faster-whisper only (better compatibility)
@@ -151,7 +158,10 @@ with col2:
 with col3:
     st.markdown("**🎯 Accent Detection**")
     if ACCENT_DETECTION_AVAILABLE:
-        st.success("✅ Using AI model")
+        if TORCH_AVAILABLE:
+            st.success("✅ Using AI model")
+        else:
+            st.info("✅ Using feature-based detection")
     else:
         st.error("❌ Not available")
 
@@ -353,42 +363,47 @@ def detect_english_accent(audio_file_path):
         # Alternative approach: Use a general speech emotion/classification model
         # and adapt it for accent detection
         try:
-            # Try using a speech emotion model that can be adapted
-            classifier = pipeline(
-                "audio-classification",
-                model="superb/wav2vec2-base-superb-er",
-                return_all_scores=True
-            )
-            
-            # Process audio
-            print("🔍 Analyzing accent patterns...")
-            results = classifier(audio_file_path)
-            
-            # Since this is an emotion recognition model, we'll map emotions to accents
-            # This is a simplified approach for demonstration
-            emotion_to_accent_mapping = {
-                "neu": "General American",
-                "hap": "British (RP)",
-                "ang": "Australian", 
-                "sad": "Irish",
-                "sur": "Scottish",
-                "fea": "Canadian",
-                "dis": "South African"
-            }
-            
-            # Convert results to accent predictions
-            accent_predictions = []
-            for result in results[:5]:  # Top 5
-                emotion = result['label'].lower()
-                accent = emotion_to_accent_mapping.get(emotion, f"Variant-{emotion}")
-                accent_predictions.append({
-                    'accent': accent,
-                    'confidence': result['score'],
-                    'confidence_percent': f"{result['score']*100:.1f}%"
-                })
-            
+            # Only try AI model if PyTorch is available
+            if TORCH_AVAILABLE:
+                # Try using a speech emotion model that can be adapted
+                classifier = pipeline(
+                    "audio-classification",
+                    model="superb/wav2vec2-base-superb-er",
+                    return_all_scores=True
+                )
+                
+                # Process audio
+                print("🔍 Analyzing accent patterns...")
+                results = classifier(audio_file_path)
+                
+                # Since this is an emotion recognition model, we'll map emotions to accents
+                # This is a simplified approach for demonstration
+                emotion_to_accent_mapping = {
+                    "neu": "General American",
+                    "hap": "British (RP)",
+                    "ang": "Australian", 
+                    "sad": "Irish",
+                    "sur": "Scottish",
+                    "fea": "Canadian",
+                    "dis": "South African"
+                }
+                
+                # Convert results to accent predictions
+                accent_predictions = []
+                for result in results[:5]:  # Top 5
+                    emotion = result['label'].lower()
+                    accent = emotion_to_accent_mapping.get(emotion, f"Variant-{emotion}")
+                    accent_predictions.append({
+                        'accent': accent,
+                        'confidence': result['score'],
+                        'confidence_percent': f"{result['score']*100:.1f}%"
+                    })
+            else:
+                # Skip AI model if PyTorch not available
+                raise Exception("PyTorch not available, using fallback")
+                
         except Exception as model_error:
-            print(f"Primary model failed, using fallback approach: {model_error}")
+            print(f"AI model failed or not available, using fallback approach: {model_error}")
             
             # Fallback: Simple rule-based accent detection based on audio features
             print("🔄 Using fallback accent detection...")
@@ -473,10 +488,11 @@ def detect_english_accent(audio_file_path):
                 f.write(f"{i}. {pred['accent']}: {pred['confidence_percent']} - {pred_personality['persona']} {pred_personality['emoji']}\n")
             
             f.write(f"\n=== TECHNICAL DETAILS ===\n")
-            f.write(f"Model: Wav2Vec2-based accent classifier\n")
+            f.write(f"Model: {'Wav2Vec2-based accent classifier' if TORCH_AVAILABLE and 'classifier' in locals() else 'Feature-based accent detection'}\n")
             f.write(f"Sample Rate: {sr} Hz\n")
             f.write(f"Audio Quality: {'Good' if duration > 3 else 'Fair'}\n")
-            f.write(f"Processing Method: {'AI Model' if 'classifier' in locals() else 'Feature-based'}\n")
+            f.write(f"Processing Method: {'AI Model' if TORCH_AVAILABLE and 'classifier' in locals() else 'Feature-based'}\n")
+            f.write(f"PyTorch Available: {'Yes' if TORCH_AVAILABLE else 'No'}\n")
         
         return {
             "success": True,

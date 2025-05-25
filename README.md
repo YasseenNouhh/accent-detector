@@ -29,39 +29,34 @@ A Streamlit-based application that downloads videos from various sources and tra
   - Detailed segment-by-segment breakdown
 
 ### 🎯 Accent Detection
-- **AI-Powered Analysis**: Uses Hugging Face's `wav2vec2-large-xlsr-53-english-accent-classifier`
-- **Multiple English Accents**: Detects American, British, Australian, Canadian, Indian, and more
+- **AI-Powered Analysis**: Uses Hugging Face's `superb/wav2vec2-base-superb-er` with fallback feature-based detection
+- **Multiple English Accents**: Detects General American, British (RP), Australian, Irish, Scottish, Canadian, South African
 - **Confidence Scoring**: Provides percentage confidence for predictions
 - **Smart Preprocessing**: Automatically converts audio to optimal format (16kHz mono)
 - **Quality Checks**: Validates audio duration and volume levels
+- **Robust Fallback**: Uses audio feature analysis if AI model fails
 - **Detailed Results**: 
   - Primary accent prediction with confidence score
   - Top 5 accent predictions
   - Technical analysis details
   - Downloadable results file
 
-## Installation & Setup
+## Installation
 
-### 1. Install Dependencies
+1. Clone this repository:
+```bash
+git clone <repository-url>
+cd accent-detector
+```
 
+2. Install the required dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-### 2. For GPU Acceleration (Optional but Recommended)
+**Note**: The app uses `faster-whisper` for transcription, which is more compatible with different systems than `openai-whisper`.
 
-If you have a CUDA-compatible GPU, install PyTorch with CUDA support for much faster transcription:
-
-```bash
-# For CUDA 11.8
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu118
-
-# For CUDA 12.1
-pip install torch torchaudio --index-url https://download.pytorch.org/whl/cu121
-```
-
-### 3. Run the Application
-
+3. Run the application:
 ```bash
 streamlit run app.py
 ```
@@ -126,7 +121,7 @@ accent-detector/
 
 1. **Whisper Not Available**
    ```bash
-   pip install openai-whisper torch torchaudio
+   pip install faster-whisper
    ```
 
 2. **Slow Transcription**
@@ -144,6 +139,11 @@ accent-detector/
    - Try different video source
    - Check video file integrity
 
+5. **Accent Detection Issues**
+   - Ensure audio is clear English speech
+   - Minimum 1 second duration required
+   - Check internet connection for model downloads
+
 ### Performance Tips
 
 1. **GPU Acceleration**: Install CUDA-compatible PyTorch for 5-10x faster transcription
@@ -154,8 +154,7 @@ accent-detector/
 ## Dependencies
 
 - `streamlit`: Web interface
-- `openai-whisper`: Speech recognition
-- `faster-whisper`: Alternative speech recognition (Windows-friendly)
+- `faster-whisper`: Speech recognition (compatible alternative to openai-whisper)
 - `torch` & `torchaudio`: ML framework
 - `transformers`: Hugging Face models for accent detection
 - `librosa`: Audio processing and analysis
@@ -164,6 +163,7 @@ accent-detector/
 - `moviepy`: Video/audio processing
 - `requests`: HTTP downloads
 - `yt-dlp`: Video download fallback
+- `ffmpeg-python`: Audio/video processing backend
 
 ## License
 

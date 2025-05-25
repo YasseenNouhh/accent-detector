@@ -1,7 +1,6 @@
 import os
 import streamlit as st
 import requests
-from pytube import YouTube
 from pathlib import Path
 import logging
 import traceback
@@ -26,24 +25,16 @@ except ImportError as e:
     ACCENT_DETECTION_AVAILABLE = False
     print(f"❌ Accent detection not available: {e}")
 
-# Whisper imports - Try faster-whisper first (better for Windows)
+# Whisper imports - Use faster-whisper only (better compatibility)
 try:
     from faster_whisper import WhisperModel
     WHISPER_AVAILABLE = True
     WHISPER_TYPE = "faster"
-except ImportError:
+    print("✅ Using faster-whisper for transcription")
+except ImportError as e:
     WHISPER_AVAILABLE = False
     WHISPER_TYPE = None
-
-# Try openai-whisper as fallback
-if not WHISPER_AVAILABLE:
-    try:
-        import whisper
-        import torch
-        WHISPER_AVAILABLE = True
-        WHISPER_TYPE = "openai"
-    except ImportError:
-        pass
+    print(f"❌ Whisper not available: {e}")
 
 # Configure logging
 log_dir = Path("logs")
@@ -120,7 +111,7 @@ detect_accent = st.checkbox("Detect English accent using AI", value=False)
 
 # Whisper model selection
 if transcribe_audio and WHISPER_AVAILABLE:
-    st.info(f"✅ Using {WHISPER_TYPE}-whisper for transcription")
+    st.info("✅ Using faster-whisper for transcription")
     whisper_model = st.selectbox(
         "Select Whisper model size",
         ["tiny", "base", "small", "medium", "large"],
@@ -132,8 +123,7 @@ else:
 
 if transcribe_audio and not WHISPER_AVAILABLE:
     st.error("⚠️ Whisper is not available. Please install the required dependencies.")
-    st.info("Run: pip install openai-whisper faster-whisper ffmpeg-python")
-    st.info("If you're on Windows and getting FFmpeg errors, try: pip install ffmpeg")
+    st.info("Run: pip install faster-whisper")
 
 if detect_accent and not ACCENT_DETECTION_AVAILABLE:
     st.error("⚠️ Accent detection is not available. Please install the required dependencies.")
@@ -211,8 +201,8 @@ def extract_audio_from_video(video_path, output_path=None):
 
 # Function to transcribe audio using Whisper
 def transcribe_audio_with_whisper(audio_path, model_size="base", output_path=None):
-    """Transcribe audio using OpenAI Whisper or faster-whisper"""
-    logger.info(f"Starting transcription of: {audio_path} using model: {model_size} (type: {WHISPER_TYPE})")
+    """Transcribe audio using faster-whisper"""
+    logger.info(f"Starting transcription of: {audio_path} using model: {model_size}")
     
     if not WHISPER_AVAILABLE:
         logger.error("Whisper is not available")
@@ -224,45 +214,32 @@ def transcribe_audio_with_whisper(audio_path, model_size="base", output_path=Non
             logger.error(f"Audio file not found: {audio_path}")
             return None, f"Audio file not found: {audio_path}"
         
-        # Use faster-whisper if available (better for Windows)
-        if WHISPER_TYPE == "faster":
-            logger.info(f"Using faster-whisper with model: {model_size}")
-            
-            # Initialize faster-whisper model
-            model = WhisperModel(model_size, device="cpu", compute_type="int8")
-            
-            # Transcribe audio
-            logger.info("Starting transcription with faster-whisper...")
-            segments, info = model.transcribe(str(audio_path))
-            
-            # Extract transcription text and segments
-            transcription_segments = []
-            full_text = ""
-            
-            for segment in segments:
-                transcription_segments.append({
-                    "start": segment.start,
-                    "end": segment.end,
-                    "text": segment.text
-                })
-                full_text += segment.text
-            
-            result = {
-                "text": full_text.strip(),
-                "segments": transcription_segments,
-                "language": info.language
-            }
-            
-        else:  # openai-whisper
-            logger.info(f"Using openai-whisper with model: {model_size}")
-            
-            # Load Whisper model
-            logger.info(f"Loading Whisper model: {model_size}")
-            model = whisper.load_model(model_size)
-            
-            # Transcribe audio
-            logger.info("Starting transcription with openai-whisper...")
-            result = model.transcribe(str(audio_path))
+        logger.info(f"Using faster-whisper with model: {model_size}")
+        
+        # Initialize faster-whisper model
+        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        
+        # Transcribe audio
+        logger.info("Starting transcription with faster-whisper...")
+        segments, info = model.transcribe(str(audio_path))
+        
+        # Extract transcription text and segments
+        transcription_segments = []
+        full_text = ""
+        
+        for segment in segments:
+            transcription_segments.append({
+                "start": segment.start,
+                "end": segment.end,
+                "text": segment.text
+            })
+            full_text += segment.text
+        
+        result = {
+            "text": full_text.strip(),
+            "segments": transcription_segments,
+            "language": info.language
+        }
         
         # Extract transcription text
         transcription = result["text"]
@@ -955,7 +932,7 @@ with st.expander("Logs and Troubleshooting"):
     - **Loom Download Issues**: For Loom videos, right-click and select "Copy Video Address".
     - **YouTube Not Working**: YouTube frequently blocks automated downloads. Use Loom or direct links instead.
     - **Audio Extraction Issues**: If audio extraction fails, the video might not have an audio track or be in an unsupported format.
-    - **Whisper Not Available**: Install with `pip install openai-whisper torch torchaudio`
+    - **Whisper Not Available**: Install with `pip install faster-whisper`
     - **Transcription Slow**: Use smaller models (tiny/base) for faster processing
     - **Transcription Inaccurate**: Use larger models (medium/large) for better accuracy
     - **GPU Support**: Install CUDA-compatible PyTorch for GPU acceleration (much faster)

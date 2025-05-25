@@ -46,7 +46,7 @@ except ImportError as e:
 
 # Audio recorder import
 try:
-    from audio_recorder_streamlit import audio_recorder
+    from streamlit_mic_recorder import mic_recorder
     AUDIO_RECORDER_AVAILABLE = True
     print("✅ Audio recorder available")
 except ImportError:
@@ -122,17 +122,16 @@ uploaded_audio = st.file_uploader(
 st.markdown("### Or record live audio")
 if AUDIO_RECORDER_AVAILABLE:
     st.markdown("🎤 **Click to start/stop recording:**")
-    recorded_audio = audio_recorder(
-        text="Click to record",
-        recording_color="#e74c3c",
-        neutral_color="#34495e",
-        icon_name="microphone",
-        icon_size="2x",
-        pause_threshold=2.0,
-        sample_rate=16000
+    recorded_audio = mic_recorder(
+        start_prompt="🎤 Start Recording",
+        stop_prompt="⏹️ Stop Recording", 
+        just_once=False,
+        use_container_width=True,
+        format="wav",
+        key="audio_recorder"
     )
 else:
-    st.error("❌ Live audio recording not available. Install with: `pip install audio-recorder-streamlit`")
+    st.error("❌ Live audio recording not available. Install with: `pip install streamlit-mic-recorder`")
     recorded_audio = None
 
 # Set default options (no user configuration)
@@ -717,9 +716,16 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
             import tempfile
             recorded_audio_path = audio_dir / f"recorded_audio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
             
+            # streamlit-mic-recorder returns a dictionary with 'bytes' key
+            if isinstance(recorded_audio, dict) and 'bytes' in recorded_audio:
+                audio_bytes = recorded_audio['bytes']
+            else:
+                # Fallback for other formats
+                audio_bytes = recorded_audio
+            
             # Write the recorded audio bytes to file
             with open(recorded_audio_path, "wb") as f:
-                f.write(recorded_audio)
+                f.write(audio_bytes)
             
             st.success(f"Audio recorded and saved: {recorded_audio_path.name}")
             
@@ -1274,6 +1280,7 @@ st.markdown("""
 - **File Upload**: Supports WAV, MP3, MP4, M4A, FLAC, OGG formats
 - **Live Recording**: Click the microphone button to record directly in your browser
 - **Recording Tips**: Speak clearly, ensure good microphone quality, avoid background noise
+- **Browser Compatibility**: Works on all modern browsers with HTTPS (required for microphone access)
 
 ### Audio Transcription & Accent Detection
 - **Automatic Processing**: All features are enabled by default - no configuration needed!
@@ -1310,6 +1317,9 @@ with st.expander("Logs and Troubleshooting"):
     - **Accent Detection Fails**: Ensure audio is clear English speech, at least 1 second long
     - **Low Confidence Scores**: Try using longer, clearer audio samples
     - **Model Download Issues**: Check internet connection for Hugging Face model downloads
+    - **Live Recording Not Working**: Ensure app is served over HTTPS (required for microphone access)
+    - **Microphone Permission Denied**: Check browser settings and allow microphone access for the site
+    - **Recording Button Not Responding**: Try refreshing the page and ensure stable internet connection
     """)
 
 logger.info("App session ended") 

@@ -92,8 +92,9 @@ transcriptions_dir.mkdir(exist_ok=True)
 logger.info(f"Transcriptions directory set to: {transcriptions_dir.absolute()}")
 
 # App header
-st.title("Video Downloader")
-st.markdown("Download videos from Loom, direct MP4 links, and more")
+st.title("🎥 Video Processor & AI Analyzer")
+st.markdown("**Download videos → Extract audio → Transcribe speech → Detect accents** - All automatically!")
+st.markdown("*Supports Loom, direct MP4 links, and audio file uploads*")
 st.markdown("Note that the entire process might take up to 10 minutes for 10-15 minute videos, due to lack of use of APIs to show off the logic I built :)")
 
 
@@ -101,41 +102,40 @@ st.markdown("Note that the entire process might take up to 10 minutes for 10-15 
 url = st.text_input("Enter the URL of the video to download:", placeholder="https://www.loom.com/... or direct MP4 URL")
 
 # Option to upload audio file directly for transcription
-st.markdown("### Or upload an audio file directly for transcription")
+st.markdown("### Or upload an audio file for instant AI analysis")
 uploaded_audio = st.file_uploader(
     "Choose an audio file", 
     type=['wav', 'mp3', 'mp4', 'm4a', 'flac', 'ogg'],
-    help="Upload an audio file to transcribe without downloading a video"
+    help="Upload an audio file for automatic transcription and accent detection"
 )
 
-# Audio extraction option
-extract_audio = st.checkbox("Extract audio to WAV format", value=False)
+# Set default options (no user configuration)
+extract_audio = True  # Always extract audio
+transcribe_audio = True  # Always transcribe
+detect_accent = True  # Always detect accent
+whisper_model = "base"  # Use base model by default
 
-# Transcription option
-transcribe_audio = st.checkbox("Transcribe audio to text using Whisper", value=False)
+# Show status of available features
+st.markdown("### 🚀 Features (automatically enabled)")
+col1, col2, col3 = st.columns(3)
 
-# Accent detection option
-detect_accent = st.checkbox("Detect English accent using AI", value=False)
+with col1:
+    st.markdown("**🔊 Audio Extraction**")
+    st.success("✅ Enabled")
 
-# Whisper model selection
-if transcribe_audio and WHISPER_AVAILABLE:
-    st.info("✅ Using faster-whisper for transcription")
-    whisper_model = st.selectbox(
-        "Select Whisper model size",
-        ["tiny", "base", "small", "medium", "large"],
-        index=1,  # Default to "base"
-        help="Larger models are more accurate but slower. 'base' is a good balance."
-    )
-else:
-    whisper_model = "base"
+with col2:
+    st.markdown("**📝 Transcription**")
+    if WHISPER_AVAILABLE:
+        st.success("✅ Using faster-whisper (base model)")
+    else:
+        st.error("❌ Not available")
 
-if transcribe_audio and not WHISPER_AVAILABLE:
-    st.error("⚠️ Whisper is not available. Please install the required dependencies.")
-    st.info("Run: pip install faster-whisper")
-
-if detect_accent and not ACCENT_DETECTION_AVAILABLE:
-    st.error("⚠️ Accent detection is not available. Please install the required dependencies.")
-    st.info("Run: pip install transformers librosa soundfile datasets")
+with col3:
+    st.markdown("**🎯 Accent Detection**")
+    if ACCENT_DETECTION_AVAILABLE:
+        st.success("✅ Using AI model")
+    else:
+        st.error("❌ Not available")
 
 # Helper function to extract real video URL from Loom
 def extract_loom_video_url(loom_url):
@@ -448,7 +448,7 @@ def detect_english_accent(audio_file_path):
         return {"error": error_msg}
 
 # Download button
-if st.button("Download" if url else "Process Audio" if uploaded_audio else "Download"):
+if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio else "🚀 Process"):
     # Handle uploaded audio file
     if uploaded_audio and not url:
         logger.info(f"Processing uploaded audio file: {uploaded_audio.name}")
@@ -460,8 +460,8 @@ if st.button("Download" if url else "Process Audio" if uploaded_audio else "Down
             
             st.success(f"Audio file uploaded: {uploaded_audio.name}")
             
-            # Transcribe if option selected
-            if transcribe_audio and WHISPER_AVAILABLE:
+            # Transcribe automatically (no option check needed)
+            if WHISPER_AVAILABLE:
                 with st.spinner(f"Transcribing uploaded audio using Whisper ({whisper_model} model)..."):
                     transcription_text, error = transcribe_audio_with_whisper(
                         uploaded_audio_path, 
@@ -492,11 +492,9 @@ if st.button("Download" if url else "Process Audio" if uploaded_audio else "Down
                                     )
                     else:
                         st.error(f"Transcription failed: {error}")
-            elif transcribe_audio and not WHISPER_AVAILABLE:
-                st.error("⚠️ Whisper is not available for transcription")
-                
-            # Detect accent if option selected
-            if detect_accent and ACCENT_DETECTION_AVAILABLE:
+            
+            # Detect accent automatically (no option check needed)
+            if ACCENT_DETECTION_AVAILABLE:
                 with st.spinner("Detecting English accent using AI..."):
                     accent_result = detect_english_accent(uploaded_audio_path)
                     
@@ -742,8 +740,8 @@ if st.button("Download" if url else "Process Audio" if uploaded_audio else "Down
                         logger.error(f"Request error: {str(req_error)}\n{error_details}")
                         st.error(f"Download error: {str(req_error)}")
                 
-                # Extract audio if option selected and file downloaded successfully
-                if extract_audio and downloaded_file_path:
+                # Extract audio automatically and file downloaded successfully
+                if downloaded_file_path:
                     st.info("Extracting audio from video...")
                     audio_path = extract_audio_from_video(downloaded_file_path)
                     if audio_path:
@@ -751,13 +749,13 @@ if st.button("Download" if url else "Process Audio" if uploaded_audio else "Down
                     else:
                         st.error("Failed to extract audio from video")
                 
-                # Transcribe audio if option selected
+                # Transcribe audio automatically
                 transcription_text = None
-                if transcribe_audio and WHISPER_AVAILABLE:
+                if WHISPER_AVAILABLE:
                     audio_file_to_transcribe = None
                     
                     # Determine which audio file to transcribe
-                    if extract_audio and downloaded_file_path and 'audio_path' in locals() and audio_path:
+                    if downloaded_file_path and 'audio_path' in locals() and audio_path:
                         # Use the newly extracted audio
                         audio_file_to_transcribe = audio_path
                         st.info("Transcribing newly extracted audio...")
@@ -769,7 +767,7 @@ if st.button("Download" if url else "Process Audio" if uploaded_audio else "Down
                             audio_file_to_transcribe = max(audio_files, key=lambda x: x.stat().st_mtime)
                             st.info(f"Transcribing audio file: {audio_file_to_transcribe.name}")
                         else:
-                            st.warning("No audio file found for transcription. Please extract audio first or upload an audio file.")
+                            st.warning("No audio file found for transcription.")
                     
                     # Perform transcription
                     if audio_file_to_transcribe:
@@ -804,13 +802,12 @@ if st.button("Download" if url else "Process Audio" if uploaded_audio else "Down
                             else:
                                 st.error(f"Transcription failed: {error}")
 
-                # Detect accent if option selected
-                accent_result = None
-                if detect_accent and ACCENT_DETECTION_AVAILABLE:
+                # Detect accent automatically
+                if ACCENT_DETECTION_AVAILABLE:
                     audio_file_to_analyze = None
                     
                     # Determine which audio file to analyze for accent
-                    if extract_audio and downloaded_file_path and 'audio_path' in locals() and audio_path:
+                    if downloaded_file_path and 'audio_path' in locals() and audio_path:
                         # Use the newly extracted audio
                         audio_file_to_analyze = audio_path
                         st.info("Analyzing accent from newly extracted audio...")
@@ -822,7 +819,7 @@ if st.button("Download" if url else "Process Audio" if uploaded_audio else "Down
                             audio_file_to_analyze = max(audio_files, key=lambda x: x.stat().st_mtime)
                             st.info(f"Analyzing accent from audio file: {audio_file_to_analyze.name}")
                         else:
-                            st.warning("No audio file found for accent detection. Please extract audio first or upload an audio file.")
+                            st.warning("No audio file found for accent detection.")
                     
                     # Perform accent detection
                     if audio_file_to_analyze:
@@ -862,28 +859,25 @@ if st.button("Download" if url else "Process Audio" if uploaded_audio else "Down
                     st.write(f"📁 {file.name}")
                 
                 # Display extracted audio files
-                if extract_audio:
-                    st.subheader("Extracted Audio Files")
-                    audio_files = list(audio_dir.glob("*.wav"))
-                    logger.info(f"Audio files in directory: {[f.name for f in audio_files]}")
-                    for file in audio_files:
-                        st.write(f"🔊 {file.name}")
+                st.subheader("Extracted Audio Files")
+                audio_files = list(audio_dir.glob("*.wav"))
+                logger.info(f"Audio files in directory: {[f.name for f in audio_files]}")
+                for file in audio_files:
+                    st.write(f"🔊 {file.name}")
                 
                 # Display transcription files
-                if transcribe_audio or len(list(transcriptions_dir.glob("*.txt"))) > 0:
-                    st.subheader("Transcription Files")
-                    transcription_files = list(transcriptions_dir.glob("*_transcription.txt"))
-                    logger.info(f"Transcription files in directory: {[f.name for f in transcription_files]}")
-                    for file in transcription_files:
-                        st.write(f"📝 {file.name}")
+                st.subheader("Transcription Files")
+                transcription_files = list(transcriptions_dir.glob("*_transcription.txt"))
+                logger.info(f"Transcription files in directory: {[f.name for f in transcription_files]}")
+                for file in transcription_files:
+                    st.write(f"📝 {file.name}")
                 
                 # Display accent detection files
-                if detect_accent or len(list(transcriptions_dir.glob("*_accent_analysis.txt"))) > 0:
-                    st.subheader("Accent Detection Files")
-                    accent_files = list(transcriptions_dir.glob("*_accent_analysis.txt"))
-                    logger.info(f"Accent detection files in directory: {[f.name for f in accent_files]}")
-                    for file in accent_files:
-                        st.write(f"🎯 {file.name}")
+                st.subheader("Accent Detection Files")
+                accent_files = list(transcriptions_dir.glob("*_accent_analysis.txt"))
+                logger.info(f"Accent detection files in directory: {[f.name for f in accent_files]}")
+                for file in accent_files:
+                    st.write(f"🎯 {file.name}")
                 
         except Exception as e:
             error_details = traceback.format_exc()
@@ -892,13 +886,9 @@ if st.button("Download" if url else "Process Audio" if uploaded_audio else "Down
 
 # Display download folder info
 st.markdown("---")
-st.info(f"Files are saved to: {os.path.abspath(download_dir)}")
-if extract_audio:
-    st.info(f"Audio files are saved to: {os.path.abspath(audio_dir)}")
-if transcribe_audio:
-    st.info(f"Transcription files are saved to: {os.path.abspath(transcriptions_dir)}")
-if detect_accent:
-    st.info(f"Accent detection results are saved to: {os.path.abspath(transcriptions_dir)}")
+st.info(f"📁 Downloaded files: {os.path.abspath(download_dir)}")
+st.info(f"🔊 Audio files: {os.path.abspath(audio_dir)}")
+st.info(f"📝 Transcription & accent results: {os.path.abspath(transcriptions_dir)}")
 
 # Add tips about Loom and direct links
 st.markdown("""
@@ -907,26 +897,14 @@ st.markdown("""
 - **Direct MP4 Links**: Look for URLs ending with .mp4, .mov, etc.
 - **Other Video Sites**: Right-click on the video and look for options like "Copy video address"
 
-### Audio Transcription Tips
-- **Whisper Models**: 
-  - `tiny`: Fastest, least accurate (~39 MB)
-  - `base`: Good balance of speed and accuracy (~74 MB) - **Recommended**
-  - `small`: Better accuracy, slower (~244 MB)
-  - `medium`: High accuracy, much slower (~769 MB)
-  - `large`: Best accuracy, very slow (~1550 MB)
-- **Audio Quality**: Better audio quality leads to more accurate transcriptions
+### Audio Transcription & Accent Detection
+- **Automatic Processing**: All features are enabled by default - no configuration needed!
+- **Whisper Model**: Uses the `base` model for optimal balance of speed and accuracy
+- **Audio Quality**: Better audio quality leads to more accurate results
 - **Language**: Whisper automatically detects the language (supports 99+ languages)
 - **File Formats**: Supports WAV, MP3, MP4, M4A, FLAC, OGG
-
-### Accent Detection Tips
-- **Model**: Uses `superb/wav2vec2-base-superb-er`
 - **Supported Accents**: General American, British (RP), Australian, Irish, Scottish, Canadian, South African
-- **Audio Requirements**: 
-  - Minimum 1 second duration
-  - Clear speech (not silent or too quiet)
-  - English language content
-- **Accuracy**: Higher confidence scores indicate more reliable predictions
-- **Best Results**: Use clear, uninterrupted speech samples
+- **Best Results**: Use clear, uninterrupted speech samples for accent detection
 """)
 
 # Add log info at the bottom

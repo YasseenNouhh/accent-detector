@@ -44,6 +44,15 @@ except ImportError as e:
     WHISPER_TYPE = None
     print(f"❌ Whisper not available: {e}")
 
+# Audio recorder import
+try:
+    from audio_recorder_streamlit import audio_recorder
+    AUDIO_RECORDER_AVAILABLE = True
+    print("✅ Audio recorder available")
+except ImportError:
+    AUDIO_RECORDER_AVAILABLE = False
+    print("❌ Audio recorder not available")
+
 # Configure logging
 log_dir = Path("logs")
 log_dir.mkdir(exist_ok=True)
@@ -92,9 +101,9 @@ transcriptions_dir.mkdir(exist_ok=True)
 logger.info(f"Transcriptions directory set to: {transcriptions_dir.absolute()}")
 
 # App header
-st.title("🎥 Video Processor & AI Analyzer")
+st.title("Accent Detector!")
 st.markdown("**Download videos → Extract audio → Transcribe speech → Detect accents** - All automatically!")
-st.markdown("*Supports Loom, direct MP4 links, and audio file uploads*")
+st.markdown("*Supports Loom, direct MP4 links, audio file uploads, and live recording*")
 st.markdown("Note that the entire process might take up to 10 minutes for 10-15 minute videos, due to lack of use of APIs to show off the logic I built :)")
 
 
@@ -109,6 +118,23 @@ uploaded_audio = st.file_uploader(
     help="Upload an audio file for automatic transcription and accent detection"
 )
 
+# Option to record live audio
+st.markdown("### Or record live audio")
+if AUDIO_RECORDER_AVAILABLE:
+    st.markdown("🎤 **Click to start/stop recording:**")
+    recorded_audio = audio_recorder(
+        text="Click to record",
+        recording_color="#e74c3c",
+        neutral_color="#34495e",
+        icon_name="microphone",
+        icon_size="2x",
+        pause_threshold=2.0,
+        sample_rate=16000
+    )
+else:
+    st.error("❌ Live audio recording not available. Install with: `pip install audio-recorder-streamlit`")
+    recorded_audio = None
+
 # Set default options (no user configuration)
 extract_audio = True  # Always extract audio
 transcribe_audio = True  # Always transcribe
@@ -117,7 +143,7 @@ whisper_model = "base"  # Use base model by default
 
 # Show status of available features
 st.markdown("### 🚀 Features (automatically enabled)")
-col1, col2, col3 = st.columns(3)
+col1, col2, col3, col4 = st.columns(4)
 
 with col1:
     st.markdown("**🔊 Audio Extraction**")
@@ -134,6 +160,13 @@ with col3:
     st.markdown("**🎯 Accent Detection**")
     if ACCENT_DETECTION_AVAILABLE:
         st.success("✅ Using AI model")
+    else:
+        st.error("❌ Not available")
+
+with col4:
+    st.markdown("**🎤 Live Recording**")
+    if AUDIO_RECORDER_AVAILABLE:
+        st.success("✅ Available")
     else:
         st.error("❌ Not available")
 
@@ -448,9 +481,90 @@ def detect_english_accent(audio_file_path):
         return {"error": error_msg}
 
 # Download button
-if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio else "🚀 Process"):
+if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio else "🎤 Process Recording" if recorded_audio else "🚀 Process"):
+    # Handle recorded audio
+    if recorded_audio and not url and not uploaded_audio:
+        logger.info("Processing recorded audio")
+        try:
+            # Save recorded audio to audio directory
+            import tempfile
+            recorded_audio_path = audio_dir / f"recorded_audio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
+            
+            # Write the recorded audio bytes to file
+            with open(recorded_audio_path, "wb") as f:
+                f.write(recorded_audio)
+            
+            st.success(f"Audio recorded and saved: {recorded_audio_path.name}")
+            
+            # Transcribe automatically (no option check needed)
+            if WHISPER_AVAILABLE:
+                with st.spinner(f"Transcribing recorded audio using Whisper ({whisper_model} model)..."):
+                    transcription_text, error = transcribe_audio_with_whisper(
+                        recorded_audio_path, 
+                        model_size=whisper_model
+                    )
+                    
+                    if transcription_text:
+                        st.success("Transcription completed successfully!")
+                        
+                        # Display transcription in an expandable section
+                        with st.expander("📝 Transcription Result", expanded=True):
+                            st.text_area(
+                                "Transcribed Text",
+                                transcription_text,
+                                height=300,
+                                help="This is the transcribed text from the audio. You can copy this text."
+                            )
+                            
+                            # Add a download button for the transcription
+                            transcription_file = transcriptions_dir / f"{recorded_audio_path.stem}_transcription.txt"
+                            if transcription_file.exists():
+                                with open(transcription_file, 'r', encoding='utf-8') as f:
+                                    st.download_button(
+                                        label="Download Transcription File",
+                                        data=f.read(),
+                                        file_name=transcription_file.name,
+                                        mime="text/plain"
+                                    )
+                    else:
+                        st.error(f"Transcription failed: {error}")
+                
+                # Detect accent automatically (no option check needed)
+                if ACCENT_DETECTION_AVAILABLE:
+                    with st.spinner("Detecting English accent using AI..."):
+                        accent_result = detect_english_accent(recorded_audio_path)
+                        
+                        if accent_result.get("success"):
+                            st.success("Accent detection completed successfully!")
+                            
+                            # Display accent detection results
+                            with st.expander("🎯 Accent Detection Result", expanded=True):
+                                # Main result with large text
+                                st.markdown(f"### 🗣️ Detected Accent: **{accent_result['detected_accent']}**")
+                                st.markdown(f"### 📊 Confidence: **{accent_result['confidence_percent']}**")
+                                
+                                # Progress bar for confidence
+                                st.progress(accent_result['confidence'])
+                                
+                                # Add download button for accent detection results
+                                accent_file = accent_result['results_file']
+                                if os.path.exists(accent_file):
+                                    with open(accent_file, 'r', encoding='utf-8') as f:
+                                        st.download_button(
+                                            label="Download Accent Detection Results",
+                                            data=f.read(),
+                                            file_name=os.path.basename(accent_file),
+                                            mime="text/plain"
+                                        )
+                        else:
+                            st.error(f"Accent detection failed: {accent_result.get('error', 'Unknown error')}")
+
+        except Exception as e:
+            logger.error(f"Error processing recorded audio: {str(e)}")
+            st.error(f"Error processing recorded audio: {str(e)}")
+    
     # Handle uploaded audio file
-    if uploaded_audio and not url:
+    elif uploaded_audio and not url:
         logger.info(f"Processing uploaded audio file: {uploaded_audio.name}")
         try:
             # Save uploaded file to audio directory
@@ -529,9 +643,9 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
             logger.error(f"Error processing uploaded audio: {str(e)}")
             st.error(f"Error processing uploaded audio: {str(e)}")
     
-    elif not url and not uploaded_audio:
-        st.error("Please enter a valid URL or upload an audio file")
-        logger.warning("Process attempted with no URL or uploaded file")
+    elif not url and not uploaded_audio and not recorded_audio:
+        st.error("Please enter a valid URL, upload an audio file, or record audio")
+        logger.warning("Process attempted with no URL, uploaded file, or recorded audio")
     else:
         logger.info(f"Download requested for URL: {url}")
         try:
@@ -897,12 +1011,17 @@ st.markdown("""
 - **Direct MP4 Links**: Look for URLs ending with .mp4, .mov, etc.
 - **Other Video Sites**: Right-click on the video and look for options like "Copy video address"
 
+### Audio Input Options
+- **Video URLs**: Automatically extracts audio from downloaded videos
+- **File Upload**: Supports WAV, MP3, MP4, M4A, FLAC, OGG formats
+- **Live Recording**: Click the microphone button to record directly in your browser
+- **Recording Tips**: Speak clearly, ensure good microphone quality, avoid background noise
+
 ### Audio Transcription & Accent Detection
 - **Automatic Processing**: All features are enabled by default - no configuration needed!
 - **Whisper Model**: Uses the `base` model for optimal balance of speed and accuracy
 - **Audio Quality**: Better audio quality leads to more accurate results
 - **Language**: Whisper automatically detects the language (supports 99+ languages)
-- **File Formats**: Supports WAV, MP3, MP4, M4A, FLAC, OGG
 - **Supported Accents**: General American, British (RP), Australian, Irish, Scottish, Canadian, South African
 - **Best Results**: Use clear, uninterrupted speech samples for accent detection
 """)

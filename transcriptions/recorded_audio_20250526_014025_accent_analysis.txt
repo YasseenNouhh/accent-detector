@@ -1,0 +1,22 @@
+=== ENGLISH ACCENT DETECTION RESULTS ===
+
+Audio File: recorded_audio_20250526_014025.wav
+Duration: 9.1 seconds
+Analysis Date: 2025-05-26 01:40:41
+
+=== TOP PREDICTION ===
+Detected Accent: Australian
+Confidence: 70.0%
+
+=== ALL PREDICTIONS (Top 5) ===
+1. Australian: 70.0%
+2. General American: 60.0%
+3. British (RP): 55.0%
+4. Australian: 45.0%
+5. Canadian: 35.0%
+
+=== TECHNICAL DETAILS ===
+Model: Wav2Vec2-based accent classifier
+Sample Rate: 16000 Hz
+Audio Quality: Good
+Processing Method: AI Model

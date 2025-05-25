@@ -1,8 +1,0 @@
-=== TRANSCRIPTION ===
-Hi, my name is Yacine. This is a test for my accent detector.
-
-=== DETAILED SEGMENTS ===
-[0.00s - 9.00s]:  Hi, my name is Yacine. This is a test for my accent detector.
-
-=== DETECTED LANGUAGE ===
-en

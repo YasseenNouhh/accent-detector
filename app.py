@@ -102,7 +102,7 @@ logger.info(f"Transcriptions directory set to: {transcriptions_dir.absolute()}")
 
 # App header
 st.title("Accent Detector!")
-st.markdown("**Download videos → Extract audio → Transcribe speech → Detect accents** - All automatically!")
+st.markdown("**Download videos → Extract audio → Transcribe speech → Detect accents → Get voice personas** - All automatically!")
 st.markdown("*Supports Loom, direct MP4 links, audio file uploads, and live recording*")
 st.markdown("Note that the entire process might take up to 10 minutes for 10-15 minute videos, due to lack of use of APIs to show off the logic I built :)")
 
@@ -441,6 +441,17 @@ def detect_english_accent(audio_file_path):
         
         print(f"🎯 Accent detected: {detected_accent} ({confidence_score*100:.1f}% confidence)")
         
+        # Get personality tag for enhanced results
+        personality_tag = get_accent_personality_tag(detected_accent)
+        
+        # Calculate interview readiness stamp (using dummy transcription for now)
+        temp_result = {
+            "detected_accent": detected_accent,
+            "confidence": confidence_score,
+            "audio_duration": duration
+        }
+        interview_stamp = get_interview_readiness_stamp(temp_result, None)
+        
         # Save detailed results
         base_name = os.path.splitext(os.path.basename(audio_file_path))[0]
         results_file = os.path.join(transcriptions_dir, f"{base_name}_accent_analysis.txt")
@@ -455,9 +466,19 @@ def detect_english_accent(audio_file_path):
             f.write(f"Detected Accent: {detected_accent}\n")
             f.write(f"Confidence: {confidence_score*100:.1f}%\n\n")
             
+            f.write("=== VOICE PERSONA ===\n")
+            f.write(f"Personality Tag: {personality_tag['persona']} {personality_tag['emoji']}\n")
+            f.write(f"Description: {personality_tag['description']}\n\n")
+            
+            f.write("=== INTERVIEW READINESS ASSESSMENT ===\n")
+            f.write(f"Readiness Level: {interview_stamp['icon']} {interview_stamp['title']}\n")
+            f.write(f"Score: {interview_stamp['score']:.1f}/100\n")
+            f.write(f"Recommendation: {interview_stamp['recommendation']}\n\n")
+            
             f.write("=== ALL PREDICTIONS (Top 5) ===\n")
             for i, pred in enumerate(accent_predictions, 1):
-                f.write(f"{i}. {pred['accent']}: {pred['confidence_percent']}\n")
+                pred_personality = get_accent_personality_tag(pred['accent'])
+                f.write(f"{i}. {pred['accent']}: {pred['confidence_percent']} - {pred_personality['persona']} {pred_personality['emoji']}\n")
             
             f.write(f"\n=== TECHNICAL DETAILS ===\n")
             f.write(f"Model: Wav2Vec2-based accent classifier\n")
@@ -470,6 +491,8 @@ def detect_english_accent(audio_file_path):
             "detected_accent": detected_accent,
             "confidence": confidence_score,
             "confidence_percent": f"{confidence_score*100:.1f}%",
+            "personality_tag": personality_tag,
+            "interview_stamp": interview_stamp,
             "all_predictions": accent_predictions,
             "results_file": results_file,
             "audio_duration": duration
@@ -479,6 +502,210 @@ def detect_english_accent(audio_file_path):
         error_msg = f"Accent detection failed: {str(e)}"
         print(f"❌ {error_msg}")
         return {"error": error_msg}
+
+# Function to map accents to personality tags
+def get_accent_personality_tag(accent_name):
+    """
+    Map detected accent to a creative personality tag with emoji and cultural association
+    """
+    accent_personas = {
+        # British accents
+        "British (RP)": {
+            "persona": "Polished London Professional",
+            "emoji": "🇬🇧",
+            "description": "Sophisticated, articulate, and commanding presence"
+        },
+        "British": {
+            "persona": "Polished London Professional", 
+            "emoji": "🇬🇧",
+            "description": "Sophisticated, articulate, and commanding presence"
+        },
+        
+        # American accents
+        "General American": {
+            "persona": "Confident American Go-Getter",
+            "emoji": "🇺🇸", 
+            "description": "Direct, energetic, and business-minded"
+        },
+        "American": {
+            "persona": "Confident American Go-Getter",
+            "emoji": "🇺🇸",
+            "description": "Direct, energetic, and business-minded"
+        },
+        
+        # Australian accent
+        "Australian": {
+            "persona": "Friendly Aussie Vibes",
+            "emoji": "🇦🇺",
+            "description": "Laid-back, approachable, and naturally charismatic"
+        },
+        
+        # Irish accent
+        "Irish": {
+            "persona": "Charming Irish Storyteller",
+            "emoji": "🇮🇪",
+            "description": "Warm, engaging, and naturally persuasive"
+        },
+        
+        # Scottish accent
+        "Scottish": {
+            "persona": "Bold Scottish Character",
+            "emoji": "🏴󠁧󠁢󠁳󠁣󠁴󠁿",
+            "description": "Strong-willed, authentic, and memorable"
+        },
+        
+        # Canadian accent
+        "Canadian": {
+            "persona": "Polite Canadian Diplomat",
+            "emoji": "🇨🇦",
+            "description": "Courteous, reliable, and internationally minded"
+        },
+        
+        # South African accent
+        "South African": {
+            "persona": "Dynamic South African Leader",
+            "emoji": "🇿🇦",
+            "description": "Resilient, worldly, and naturally inspiring"
+        },
+        
+        # Fallback for unknown accents
+        "Unknown": {
+            "persona": "Unique Global Voice",
+            "emoji": "🌍",
+            "description": "Distinctive, international, and intriguingly diverse"
+        }
+    }
+    
+    # Find the best match for the accent
+    accent_lower = accent_name.lower()
+    
+    # Direct match first
+    if accent_name in accent_personas:
+        return accent_personas[accent_name]
+    
+    # Partial matching for variations
+    for key in accent_personas.keys():
+        if key.lower() in accent_lower or accent_lower in key.lower():
+            return accent_personas[key]
+    
+    # Fallback to unknown
+    return accent_personas["Unknown"]
+
+# Function to calculate interview readiness stamp
+def get_interview_readiness_stamp(accent_result, transcription_text=None):
+    """
+    Calculate interview readiness based on accent clarity, confidence, and fluency
+    Returns a color-coded stamp for hiring decisions
+    """
+    
+    # Extract metrics
+    confidence = accent_result.get('confidence', 0)
+    detected_accent = accent_result.get('detected_accent', '')
+    audio_duration = accent_result.get('audio_duration', 0)
+    
+    # Base score from confidence (0-100)
+    base_score = confidence * 100
+    
+    # Accent clarity bonus/penalty
+    accent_modifiers = {
+        # High clarity accents (international business standard)
+        "General American": 10,
+        "British (RP)": 10,
+        "Canadian": 8,
+        
+        # Moderate clarity accents (generally well understood)
+        "Australian": 5,
+        "Irish": 3,
+        "South African": 3,
+        
+        # Distinctive accents (may need slight adjustment)
+        "Scottish": -2,
+        
+        # Unknown gets neutral treatment
+        "Unknown": 0
+    }
+    
+    accent_bonus = accent_modifiers.get(detected_accent, 0)
+    
+    # Audio quality bonus (longer samples = more reliable assessment)
+    duration_bonus = min(10, audio_duration * 2)  # Up to 10 points for 5+ seconds
+    
+    # Transcription fluency analysis (if available)
+    fluency_bonus = 0
+    if transcription_text:
+        text_length = len(transcription_text.strip())
+        word_count = len(transcription_text.split())
+        
+        # Bonus for substantial speech samples
+        if word_count >= 10:
+            fluency_bonus += 5
+        if word_count >= 20:
+            fluency_bonus += 5
+        
+        # Check for clear articulation indicators
+        if text_length > 50 and '.' in transcription_text:
+            fluency_bonus += 3
+    
+    # Calculate final score
+    final_score = base_score + accent_bonus + duration_bonus + fluency_bonus
+    
+    # Determine readiness tier
+    if final_score >= 80:
+        return {
+            "tier": "Ready",
+            "icon": "✅",
+            "color": "success",
+            "badge_color": "#28a745",
+            "title": "Ready for client-facing roles",
+            "description": "Clear communication, professional presence",
+            "recommendation": "Excellent for customer service, sales, management, and public-facing positions",
+            "score": final_score
+        }
+    elif final_score >= 60:
+        return {
+            "tier": "Understandable", 
+            "icon": "⚠️",
+            "color": "warning",
+            "badge_color": "#ffc107",
+            "title": "Understandable but may benefit from coaching",
+            "description": "Good communication with minor accent considerations",
+            "recommendation": "Suitable for most roles, optional accent coaching for client-facing positions",
+            "score": final_score
+        }
+    else:
+        return {
+            "tier": "Needs Support",
+            "icon": "❌", 
+            "color": "error",
+            "badge_color": "#dc3545",
+            "title": "Needs further English communication practice",
+            "description": "May require additional language support",
+            "recommendation": "Consider English communication training before client-facing roles",
+            "score": final_score
+        }
+
+# Function to display interview readiness stamp
+def display_interview_readiness_stamp(stamp_data):
+    """
+    Display the interview readiness stamp with proper styling
+    """
+    # Create a colored container for the stamp
+    if stamp_data["tier"] == "Ready":
+        st.success(f"🧑‍🏫 **Interview Readiness: {stamp_data['icon']} {stamp_data['title']}**")
+    elif stamp_data["tier"] == "Understandable":
+        st.warning(f"🧑‍🏫 **Interview Readiness: {stamp_data['icon']} {stamp_data['title']}**")
+    else:
+        st.error(f"🧑‍🏫 **Interview Readiness: {stamp_data['icon']} {stamp_data['title']}**")
+    
+    # Additional details in an info box
+    st.info(f"""
+    **Assessment Details:**
+    - {stamp_data['description']}
+    - **Recommendation:** {stamp_data['recommendation']}
+    - **Readiness Score:** {stamp_data['score']:.1f}/100
+    """)
+    
+    return stamp_data
 
 # Download button
 if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio else "🎤 Process Recording" if recorded_audio else "🚀 Process"):
@@ -537,10 +764,15 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                         if accent_result.get("success"):
                             st.success("Accent detection completed successfully!")
                             
+                            # Get personality tag
+                            personality_tag = get_accent_personality_tag(accent_result['detected_accent'])
+                            
                             # Display accent detection results
                             with st.expander("🎯 Accent Detection Result", expanded=True):
-                                # Main result with large text
+                                # Main result with personality tag
                                 st.markdown(f"### 🗣️ Detected Accent: **{accent_result['detected_accent']}**")
+                                st.markdown(f"### 🎭 Voice Persona: **{personality_tag['persona']} {personality_tag['emoji']}**")
+                                st.markdown(f"*{personality_tag['description']}*")
                                 st.markdown(f"### 📊 Confidence: **{accent_result['confidence_percent']}**")
                                 
                                 # Progress bar for confidence
@@ -556,6 +788,11 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                                             file_name=os.path.basename(accent_file),
                                             mime="text/plain"
                                         )
+                                
+                                # Calculate and display interview readiness stamp
+                                interview_readiness_stamp = accent_result.get('interview_stamp')
+                                if interview_readiness_stamp:
+                                    display_interview_readiness_stamp(interview_readiness_stamp)
                         else:
                             st.error(f"Accent detection failed: {accent_result.get('error', 'Unknown error')}")
 
@@ -615,10 +852,15 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                     if accent_result.get("success"):
                         st.success("Accent detection completed successfully!")
                         
+                        # Get personality tag
+                        personality_tag = get_accent_personality_tag(accent_result['detected_accent'])
+                        
                         # Display accent detection results
                         with st.expander("🎯 Accent Detection Result", expanded=True):
-                            # Main result with large text
+                            # Main result with personality tag
                             st.markdown(f"### 🗣️ Detected Accent: **{accent_result['detected_accent']}**")
+                            st.markdown(f"### 🎭 Voice Persona: **{personality_tag['persona']} {personality_tag['emoji']}**")
+                            st.markdown(f"*{personality_tag['description']}*")
                             st.markdown(f"### 📊 Confidence: **{accent_result['confidence_percent']}**")
                             
                             # Progress bar for confidence
@@ -943,10 +1185,15 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                             if accent_result.get("success"):
                                 st.success("Accent detection completed successfully!")
                                 
+                                # Get personality tag
+                                personality_tag = get_accent_personality_tag(accent_result['detected_accent'])
+                                
                                 # Display accent detection results
                                 with st.expander("🎯 Accent Detection Result", expanded=True):
-                                    # Main result with large text
+                                    # Main result with personality tag
                                     st.markdown(f"### 🗣️ Detected Accent: **{accent_result['detected_accent']}**")
+                                    st.markdown(f"### 🎭 Voice Persona: **{personality_tag['persona']} {personality_tag['emoji']}**")
+                                    st.markdown(f"*{personality_tag['description']}*")
                                     st.markdown(f"### 📊 Confidence: **{accent_result['confidence_percent']}**")
                                     
                                     # Progress bar for confidence
@@ -962,6 +1209,11 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                                                 file_name=os.path.basename(accent_file),
                                                 mime="text/plain"
                                             )
+                                
+                                # Calculate and display interview readiness stamp
+                                interview_readiness_stamp = accent_result.get('interview_stamp')
+                                if interview_readiness_stamp:
+                                    display_interview_readiness_stamp(interview_readiness_stamp)
                             else:
                                 st.error(f"Accent detection failed: {accent_result.get('error', 'Unknown error')}")
 
@@ -993,6 +1245,12 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                 for file in accent_files:
                     st.write(f"🎯 {file.name}")
                 
+                # Calculate interview readiness stamp
+                interview_readiness_stamp = accent_result.get('interview_stamp')
+                
+                # Display interview readiness stamp
+                display_interview_readiness_stamp(interview_readiness_stamp)
+                
         except Exception as e:
             error_details = traceback.format_exc()
             logger.error(f"Unexpected error: {str(e)}\n{error_details}")
@@ -1023,6 +1281,8 @@ st.markdown("""
 - **Audio Quality**: Better audio quality leads to more accurate results
 - **Language**: Whisper automatically detects the language (supports 99+ languages)
 - **Supported Accents**: General American, British (RP), Australian, Irish, Scottish, Canadian, South African
+- **Voice Personas**: Each accent gets a creative personality tag (e.g., "Polished London Professional 🇬🇧")
+- **Interview Readiness**: Get color-coded hiring recommendations (✅ Ready, ⚠️ Understandable, ❌ Needs Support)
 - **Best Results**: Use clear, uninterrupted speech samples for accent detection
 """)
 

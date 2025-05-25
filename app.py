@@ -46,7 +46,7 @@ except ImportError as e:
 
 # Audio recorder import
 try:
-    from streamlit_mic_recorder import mic_recorder
+    from audiorecorder import audiorecorder
     AUDIO_RECORDER_AVAILABLE = True
     print("✅ Audio recorder available")
 except ImportError:
@@ -122,16 +122,9 @@ uploaded_audio = st.file_uploader(
 st.markdown("### Or record live audio")
 if AUDIO_RECORDER_AVAILABLE:
     st.markdown("🎤 **Click to start/stop recording:**")
-    recorded_audio = mic_recorder(
-        start_prompt="🎤 Start Recording",
-        stop_prompt="⏹️ Stop Recording", 
-        just_once=False,
-        use_container_width=True,
-        format="wav",
-        key="audio_recorder"
-    )
+    recorded_audio = audiorecorder("🎤 Start Recording", "⏹️ Stop Recording")
 else:
-    st.error("❌ Live audio recording not available. Install with: `pip install streamlit-mic-recorder`")
+    st.error("❌ Live audio recording not available. Install with: `pip install streamlit-audiorecorder`")
     recorded_audio = None
 
 # Set default options (no user configuration)
@@ -716,21 +709,18 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
             import tempfile
             recorded_audio_path = audio_dir / f"recorded_audio_{datetime.now().strftime('%Y%m%d_%H%M%S')}.wav"
             
-            # streamlit-mic-recorder returns a dictionary with 'bytes' key
-            if isinstance(recorded_audio, dict) and 'bytes' in recorded_audio:
-                audio_bytes = recorded_audio['bytes']
+            # streamlit-audiorecorder returns a pydub AudioSegment
+            # Check if we have a valid recording (length > 0)
+            if len(recorded_audio) > 0:
+                # Export the AudioSegment to WAV file
+                recorded_audio.export(str(recorded_audio_path), format="wav")
+                st.success(f"Audio recorded and saved: {recorded_audio_path.name}")
             else:
-                # Fallback for other formats
-                audio_bytes = recorded_audio
-            
-            # Write the recorded audio bytes to file
-            with open(recorded_audio_path, "wb") as f:
-                f.write(audio_bytes)
-            
-            st.success(f"Audio recorded and saved: {recorded_audio_path.name}")
+                st.warning("No audio recorded. Please try recording again.")
+                recorded_audio_path = None
             
             # Transcribe automatically (no option check needed)
-            if WHISPER_AVAILABLE:
+            if recorded_audio_path and WHISPER_AVAILABLE:
                 with st.spinner(f"Transcribing recorded audio using Whisper ({whisper_model} model)..."):
                     transcription_text, error = transcribe_audio_with_whisper(
                         recorded_audio_path, 
@@ -763,7 +753,7 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                         st.error(f"Transcription failed: {error}")
                 
                 # Detect accent automatically (no option check needed)
-                if ACCENT_DETECTION_AVAILABLE:
+                if recorded_audio_path and ACCENT_DETECTION_AVAILABLE:
                     with st.spinner("Detecting English accent using AI..."):
                         accent_result = detect_english_accent(recorded_audio_path)
                         
@@ -1222,7 +1212,7 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                                     display_interview_readiness_stamp(interview_readiness_stamp)
                             else:
                                 st.error(f"Accent detection failed: {accent_result.get('error', 'Unknown error')}")
-
+                
                 # Display downloaded files
                 st.subheader("Downloaded Files")
                 files = list(download_dir.glob("*"))
@@ -1231,11 +1221,11 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                     st.write(f"📁 {file.name}")
                 
                 # Display extracted audio files
-                st.subheader("Extracted Audio Files")
-                audio_files = list(audio_dir.glob("*.wav"))
-                logger.info(f"Audio files in directory: {[f.name for f in audio_files]}")
-                for file in audio_files:
-                    st.write(f"🔊 {file.name}")
+                    st.subheader("Extracted Audio Files")
+                    audio_files = list(audio_dir.glob("*.wav"))
+                    logger.info(f"Audio files in directory: {[f.name for f in audio_files]}")
+                    for file in audio_files:
+                        st.write(f"🔊 {file.name}")
                 
                 # Display transcription files
                 st.subheader("Transcription Files")
@@ -1320,6 +1310,8 @@ with st.expander("Logs and Troubleshooting"):
     - **Live Recording Not Working**: Ensure app is served over HTTPS (required for microphone access)
     - **Microphone Permission Denied**: Check browser settings and allow microphone access for the site
     - **Recording Button Not Responding**: Try refreshing the page and ensure stable internet connection
+    - **No Audio Recorded**: Click start, speak clearly, then click stop - ensure microphone is working
+    - **Audio Recorder Not Available**: Install with `pip install streamlit-audiorecorder`
     """)
 
 logger.info("App session ended") 

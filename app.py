@@ -10,8 +10,16 @@ import sys
 import tempfile
 import shutil
 import re
-from moviepy.editor import VideoFileClip
 
+# Try new MoviePy 2.x import first, fallback to old 1.x import
+try:
+    from moviepy import VideoFileClip
+except ImportError:
+    try:
+        from moviepy.editor import VideoFileClip
+    except ImportError:
+        VideoFileClip = None
+        print("❌ MoviePy not available - video processing will be disabled")
 # Accent detection imports
 try:
     from transformers import Wav2Vec2ForSequenceClassification, Wav2Vec2FeatureExtractor, pipeline
@@ -168,6 +176,11 @@ def extract_loom_video_url(loom_url):
 def extract_audio_from_video(video_path, output_path=None):
     """Extract audio from video and save as WAV"""
     logger.info(f"Extracting audio from video: {video_path}")
+    
+    if VideoFileClip is None:
+        logger.error("MoviePy is not available - cannot extract audio from video")
+        return None
+    
     try:
         video_file = Path(video_path)
         if not video_file.exists():

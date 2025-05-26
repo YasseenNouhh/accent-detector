@@ -289,12 +289,12 @@ def transcribe_audio_with_whisper(audio_path, model_size="base", output_path=Non
                     # If all attempts fail, return error
                     error_msg = f"Failed to load Whisper model after {max_retries} attempts. This may be due to network issues or rate limiting from Hugging Face. Please try again later."
                     logger.error(error_msg)
-                    return None, error_msg
+                    return transcribe_audio_fallback(audio_path, output_path)
         
         if model is None:
             error_msg = "Could not initialize Whisper model"
             logger.error(error_msg)
-            return None, error_msg
+            return transcribe_audio_fallback(audio_path, output_path)
         
         # Transcribe audio
         logger.info("Starting transcription with faster-whisper...")
@@ -920,7 +920,7 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                 recorded_audio_path = None
             
             # Transcribe automatically (no option check needed)
-            if recorded_audio_path and WHISPER_AVAILABLE:
+            if recorded_audio_path:
                 with st.spinner(f"Transcribing recorded audio using Whisper ({whisper_model} model)..."):
                     transcription_text, error = transcribe_audio_with_whisper(
                         recorded_audio_path, 
@@ -1012,41 +1012,40 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
             st.success(f"Audio file uploaded: {uploaded_audio.name}")
             
             # Transcribe automatically (no option check needed)
-            if WHISPER_AVAILABLE:
-                with st.spinner(f"Transcribing uploaded audio using Whisper ({whisper_model} model)..."):
-                    transcription_text, error = transcribe_audio_with_whisper(
-                        uploaded_audio_path, 
-                        model_size=whisper_model
-                    )
-                    
-                    if transcription_text:
-                        if "[Audio transcription unavailable" in transcription_text:
-                            st.warning("⚠️ Transcription completed in fallback mode")
-                            st.info("Whisper models are temporarily unavailable due to network issues. The accent detection will still work!")
-                        else:
-                            st.success("Transcription completed successfully!")
-                        
-                        # Display transcription in an expandable section
-                        with st.expander("📝 Transcription Result", expanded=True):
-                            st.text_area(
-                                "Transcribed Text",
-                                transcription_text,
-                                height=300,
-                                help="This is the transcribed text from the audio. You can copy this text."
-                            )
-                            
-                            # Add a download button for the transcription
-                            transcription_file = transcriptions_dir / f"{uploaded_audio_path.stem}_transcription.txt"
-                            if transcription_file.exists():
-                                with open(transcription_file, 'r', encoding='utf-8') as f:
-                                    st.download_button(
-                                        label="Download Transcription File",
-                                        data=f.read(),
-                                        file_name=transcription_file.name,
-                                        mime="text/plain"
-                                    )
+            with st.spinner(f"Transcribing uploaded audio using Whisper ({whisper_model} model)..."):
+                transcription_text, error = transcribe_audio_with_whisper(
+                    uploaded_audio_path, 
+                    model_size=whisper_model
+                )
+                
+                if transcription_text:
+                    if "[Audio transcription unavailable" in transcription_text:
+                        st.warning("⚠️ Transcription completed in fallback mode")
+                        st.info("Whisper models are temporarily unavailable due to network issues. The accent detection will still work!")
                     else:
-                        st.error(f"Transcription failed: {error}")
+                        st.success("Transcription completed successfully!")
+                    
+                    # Display transcription in an expandable section
+                    with st.expander("📝 Transcription Result", expanded=True):
+                        st.text_area(
+                            "Transcribed Text",
+                            transcription_text,
+                            height=300,
+                            help="This is the transcribed text from the audio. You can copy this text."
+                        )
+                        
+                        # Add a download button for the transcription
+                        transcription_file = transcriptions_dir / f"{uploaded_audio_path.stem}_transcription.txt"
+                        if transcription_file.exists():
+                            with open(transcription_file, 'r', encoding='utf-8') as f:
+                                st.download_button(
+                                    label="Download Transcription File",
+                                    data=f.read(),
+                                    file_name=transcription_file.name,
+                                    mime="text/plain"
+                                )
+                else:
+                    st.error(f"Transcription failed: {error}")
             
             # Detect accent automatically (no option check needed)
             if ACCENT_DETECTION_AVAILABLE:
@@ -1311,60 +1310,59 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                 
                 # Transcribe audio automatically
                 transcription_text = None
-                if WHISPER_AVAILABLE:
-                    audio_file_to_transcribe = None
-                    
-                    # Determine which audio file to transcribe
-                    if downloaded_file_path and 'audio_path' in locals() and audio_path:
-                        # Use the newly extracted audio
-                        audio_file_to_transcribe = audio_path
-                        st.info("Transcribing newly extracted audio...")
+                audio_file_to_transcribe = None
+                
+                # Determine which audio file to transcribe
+                if downloaded_file_path and 'audio_path' in locals() and audio_path:
+                    # Use the newly extracted audio
+                    audio_file_to_transcribe = audio_path
+                    st.info("Transcribing newly extracted audio...")
+                else:
+                    # Look for existing audio files
+                    audio_files = list(audio_dir.glob("*.wav"))
+                    if audio_files:
+                        # Use the most recent audio file
+                        audio_file_to_transcribe = max(audio_files, key=lambda x: x.stat().st_mtime)
+                        st.info(f"Transcribing audio file: {audio_file_to_transcribe.name}")
                     else:
-                        # Look for existing audio files
-                        audio_files = list(audio_dir.glob("*.wav"))
-                        if audio_files:
-                            # Use the most recent audio file
-                            audio_file_to_transcribe = max(audio_files, key=lambda x: x.stat().st_mtime)
-                            st.info(f"Transcribing audio file: {audio_file_to_transcribe.name}")
-                        else:
-                            st.warning("No audio file found for transcription.")
-                    
-                    # Perform transcription
-                    if audio_file_to_transcribe:
-                        with st.spinner(f"Transcribing audio using Whisper ({whisper_model} model)..."):
-                            transcription_text, error = transcribe_audio_with_whisper(
-                                audio_file_to_transcribe, 
-                                model_size=whisper_model
-                            )
-                            
-                            if transcription_text:
-                                if "[Audio transcription unavailable" in transcription_text:
-                                    st.warning("⚠️ Transcription completed in fallback mode")
-                                    st.info("Whisper models are temporarily unavailable due to network issues. The accent detection will still work!")
-                                else:
-                                    st.success("Transcription completed successfully!")
-                                
-                                # Display transcription in an expandable section
-                                with st.expander("📝 Transcription Result", expanded=True):
-                                    st.text_area(
-                                        "Transcribed Text",
-                                        transcription_text,
-                                        height=300,
-                                        help="This is the transcribed text from the audio. You can copy this text."
-                                    )
-                                    
-                                    # Add a download button for the transcription
-                                    transcription_file = transcriptions_dir / f"{audio_file_to_transcribe.stem}_transcription.txt"
-                                    if transcription_file.exists():
-                                        with open(transcription_file, 'r', encoding='utf-8') as f:
-                                            st.download_button(
-                                                label="Download Transcription File",
-                                                data=f.read(),
-                                                file_name=transcription_file.name,
-                                                mime="text/plain"
-                                            )
+                        st.warning("No audio file found for transcription.")
+                
+                # Perform transcription
+                if audio_file_to_transcribe:
+                    with st.spinner(f"Transcribing audio using Whisper ({whisper_model} model)..."):
+                        transcription_text, error = transcribe_audio_with_whisper(
+                            audio_file_to_transcribe, 
+                            model_size=whisper_model
+                        )
+                        
+                        if transcription_text:
+                            if "[Audio transcription unavailable" in transcription_text:
+                                st.warning("⚠️ Transcription completed in fallback mode")
+                                st.info("Whisper models are temporarily unavailable due to network issues. The accent detection will still work!")
                             else:
-                                st.error(f"Transcription failed: {error}")
+                                st.success("Transcription completed successfully!")
+                            
+                            # Display transcription in an expandable section
+                            with st.expander("📝 Transcription Result", expanded=True):
+                                st.text_area(
+                                    "Transcribed Text",
+                                    transcription_text,
+                                    height=300,
+                                    help="This is the transcribed text from the audio. You can copy this text."
+                                )
+                                
+                                # Add a download button for the transcription
+                                transcription_file = transcriptions_dir / f"{audio_file_to_transcribe.stem}_transcription.txt"
+                                if transcription_file.exists():
+                                    with open(transcription_file, 'r', encoding='utf-8') as f:
+                                        st.download_button(
+                                            label="Download Transcription File",
+                                            data=f.read(),
+                                            file_name=transcription_file.name,
+                                            mime="text/plain"
+                                        )
+                        else:
+                            st.error(f"Transcription failed: {error}")
 
                 # Detect accent automatically
                 if ACCENT_DETECTION_AVAILABLE:

@@ -50,7 +50,17 @@ Color-coded hiring recommendations based on communication clarity:
 
 ## 🚀 Quick Start
 
-### Installation
+### 🌐 Deploy to Streamlit Cloud (Recommended)
+1. **Fork this repository** to your GitHub account
+2. **Go to [share.streamlit.io](https://share.streamlit.io)** and sign in
+3. **Click "New app"** and connect your GitHub repository
+4. **Set main file path**: `app.py`
+5. **Click "Deploy!"** - All dependencies install automatically
+6. **Your app will be live** at `https://your-app-name.streamlit.app`
+
+✅ **Cloud Benefits**: HTTPS enabled, FFmpeg pre-installed, live recording works immediately!
+
+### 💻 Local Installation
 
 1. **Clone the repository:**
 ```bash
@@ -63,12 +73,22 @@ cd accent-detector
 pip install -r requirements.txt
 ```
 
-3. **Run the application:**
+3. **Set up FFmpeg (required for audio processing):**
+```bash
+python setup_ffmpeg.py
+```
+
+4. **Run the application:**
 ```bash
 streamlit run app.py
 ```
 
-4. **Access the app:** Open `http://localhost:8501` in your browser
+5. **Access the app:** Open `http://localhost:8501` in your browser
+
+### 🔧 Quick Fix for Issues
+```bash
+python fix_issues.py
+```
 
 ### Usage
 

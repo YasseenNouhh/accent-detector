@@ -1,0 +1,32 @@
+[server]
+# Optimize for Streamlit Cloud
+maxUploadSize = 200
+maxMessageSize = 200
+enableCORS = false
+enableXsrfProtection = true
+
+[browser]
+# Disable server stats for better performance
+gatherUsageStats = false
+
+[theme]
+# Optional: Set a consistent theme
+primaryColor = "#FF6B6B"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F0F2F6"
+textColor = "#262730"
+
+[client]
+# Optimize client settings
+caching = true
+displayEnabled = true
+
+[runner]
+# Optimize for better performance
+magicEnabled = true
+installTracer = false
+fixMatplotlib = true
+
+[logger]
+# Reduce logging in production
+level = "info" 

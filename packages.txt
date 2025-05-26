@@ -1,2 +1,10 @@
+# FFmpeg for video/audio processing
 ffmpeg
-libsndfile1 
+
+# Audio processing libraries
+libsndfile1
+libasound2-dev
+portaudio19-dev
+
+# Additional dependencies for ML libraries
+libgomp1 

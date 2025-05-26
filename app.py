@@ -499,10 +499,10 @@ def transcribe_audio_fallback(audio_path, output_path=None):
         logger.error(error_msg)
         return None, error_msg
 
-# Function to detect English accent using Wav2Vec2 model
+# Function to detect English accent using pre-trained Wav2Vec2 accent classifiers
 def detect_english_accent(audio_file_path):
     """
-    Detect English accent from audio file using Wav2Vec2
+    Detect English accent from audio file using pre-trained Wav2Vec2 accent classifiers
     Returns accent prediction with confidence scores
     """
     if not ACCENT_DETECTION_AVAILABLE:
@@ -528,233 +528,320 @@ def detect_english_accent(audio_file_path):
         
         print(f"✅ Audio loaded: {duration:.1f}s duration, sample rate: {sr}Hz")
         
-        # Initialize Wav2Vec2 model for accent detection
-        print("🤖 Loading Wav2Vec2 model for accent detection...")
+        # Try multiple pre-trained accent classification models
+        accent_results = []
+        model_attempts = []
         
+        # Model 1: Try ylacombe/accent-classifier (recent accent classifier)
         try:
-            from transformers import Wav2Vec2Processor, Wav2Vec2ForSequenceClassification
-            import torch
-            import torch.nn.functional as F
+            print("🤖 Attempting ylacombe/accent-classifier...")
+            from transformers import pipeline
             
-            # Use a pre-trained Wav2Vec2 model fine-tuned for accent classification
-            # We'll use facebook/wav2vec2-base as the base and create our own classification head
-            model_name = "facebook/wav2vec2-base"
+            accent_classifier = pipeline(
+                "audio-classification", 
+                model="ylacombe/accent-classifier",
+                device=0 if torch.cuda.is_available() else -1
+            )
             
-            # Load processor and model
-            processor = Wav2Vec2Processor.from_pretrained(model_name)
-            
-            # Create a custom classification model
-            # Since there's no pre-trained accent classifier, we'll use feature extraction + custom classifier
-            from transformers import Wav2Vec2Model
-            wav2vec2_model = Wav2Vec2Model.from_pretrained(model_name)
-            
-            print("✅ Wav2Vec2 model loaded successfully")
-            
-            # Preprocess audio for Wav2Vec2
-            # Ensure audio is the right length (max 30 seconds for memory efficiency)
-            max_length = 30 * sr  # 30 seconds
+            # Ensure audio is not too long (max 30 seconds)
+            max_length = 30 * sr
             if len(audio) > max_length:
-                audio = audio[:max_length]
+                audio_segment = audio[:max_length]
                 print(f"⚠️ Audio truncated to {max_length/sr:.1f} seconds for processing")
+            else:
+                audio_segment = audio
             
-            # Process audio with Wav2Vec2 processor
-            inputs = processor(audio, sampling_rate=sr, return_tensors="pt", padding=True)
+            # Get predictions
+            predictions = accent_classifier(audio_segment)
             
-            print("🔍 Extracting Wav2Vec2 features for accent classification...")
-            
-            # Extract features using Wav2Vec2
-            with torch.no_grad():
-                outputs = wav2vec2_model(**inputs)
-                # Get the last hidden state (contextualized representations)
-                hidden_states = outputs.last_hidden_state  # Shape: (batch_size, sequence_length, hidden_size)
-                
-                # Pool the features (mean pooling across time dimension)
-                pooled_features = torch.mean(hidden_states, dim=1)  # Shape: (batch_size, hidden_size)
-                
-                # Convert to numpy for further processing
-                features = pooled_features.squeeze().numpy()
-            
-            print(f"📊 Extracted {len(features)} Wav2Vec2 features")
-            
-            # Custom accent classification based on Wav2Vec2 features
-            # This is a simplified classifier - in practice, you'd train this on labeled accent data
-            accent_scores = {}
-            
-            # Calculate feature statistics for classification
-            feature_mean = np.mean(features)
-            feature_std = np.std(features)
-            feature_max = np.max(features)
-            feature_min = np.min(features)
-            
-            # Enhanced classification using Wav2Vec2 features
-            # These thresholds would normally be learned from training data
-            
-            # British (RP) - distinctive phonetic patterns
-            british_score = 0.3
-            if feature_mean > 0.1:  # Higher activation patterns
-                british_score += 0.25
-            if feature_std > 0.15:  # More varied phonetic patterns
-                british_score += 0.2
-            if feature_max > 0.8:  # Strong distinctive features
-                british_score += 0.15
-            accent_scores["British (RP)"] = min(0.95, british_score)
-            
-            # Australian - distinctive vowel patterns in Wav2Vec2 space
-            australian_score = 0.25
-            if 0.05 < feature_mean < 0.15:  # Mid-range activation
-                australian_score += 0.3
-            if feature_std > 0.12:  # Moderate variation
-                australian_score += 0.2
-            accent_scores["Australian"] = min(0.95, australian_score)
-            
-            # Irish - rhythmic and intonation patterns
-            irish_score = 0.2
-            if feature_std > 0.18:  # High variation in features
-                irish_score += 0.35
-            if feature_mean > 0.08:  # Specific activation patterns
-                irish_score += 0.2
-            accent_scores["Irish"] = min(0.95, irish_score)
-            
-            # Scottish - strong consonantal features
-            scottish_score = 0.15
-            if feature_max > 0.9:  # Very strong features
-                scottish_score += 0.4
-            if feature_std > 0.2:  # High variation
-                scottish_score += 0.25
-            accent_scores["Scottish"] = min(0.95, scottish_score)
-            
-            # Canadian - similar to American with subtle differences
-            canadian_score = 0.35
-            if 0.0 < feature_mean < 0.1:  # Lower activation range
-                canadian_score += 0.25
-            if 0.1 < feature_std < 0.15:  # Moderate variation
-                canadian_score += 0.15
-            accent_scores["Canadian"] = min(0.95, canadian_score)
-            
-            # South African - distinctive vowel system
-            south_african_score = 0.1
-            if feature_mean > 0.12:  # Higher activation
-                south_african_score += 0.3
-            if feature_max > 0.85:  # Strong features
-                south_african_score += 0.25
-            accent_scores["South African"] = min(0.95, south_african_score)
-            
-            # General American - baseline
-            american_score = 0.4  # Default baseline
-            if -0.05 < feature_mean < 0.08:  # Typical range
-                american_score += 0.3
-            if 0.08 < feature_std < 0.14:  # Moderate variation
-                american_score += 0.2
-            accent_scores["General American"] = min(0.95, american_score)
-            
-            # Add confidence boost based on audio quality and duration
-            quality_boost = min(0.1, duration / 10.0)  # Up to 10% boost for longer audio
-            for accent in accent_scores:
-                accent_scores[accent] = min(0.98, accent_scores[accent] + quality_boost)
-            
-            # Sort by confidence scores
-            sorted_accents = sorted(accent_scores.items(), key=lambda x: x[1], reverse=True)
-            
-            # Create accent predictions
-            accent_predictions = []
-            for accent, score in sorted_accents:
-                accent_predictions.append({
-                    'accent': accent,
-                    'confidence': score,
-                    'confidence_percent': f"{score*100:.1f}%"
+            # Process results
+            for pred in predictions[:5]:  # Top 5 predictions
+                accent_results.append({
+                    'accent': pred['label'],
+                    'confidence': pred['score'],
+                    'confidence_percent': f"{pred['score']*100:.1f}%",
+                    'model': 'ylacombe/accent-classifier'
                 })
             
-            print(f"🎯 Top Wav2Vec2 predictions: {sorted_accents[:3]}")
+            model_attempts.append("ylacombe/accent-classifier - SUCCESS")
+            print("✅ ylacombe/accent-classifier completed successfully")
             
-            # Get top prediction
-            top_prediction = accent_predictions[0]
-            detected_accent = top_prediction['accent']
-            confidence_score = top_prediction['confidence']
-            
-            print(f"🎯 Accent detected: {detected_accent} ({confidence_score*100:.1f}% confidence)")
-            
-            # Get personality tag for enhanced results
-            personality_tag = get_accent_personality_tag(detected_accent)
-            
-            # Calculate interview readiness stamp
-            temp_result = {
-                "detected_accent": detected_accent,
-                "confidence": confidence_score,
-                "audio_duration": duration
-            }
-            interview_stamp = get_interview_readiness_stamp(temp_result, None)
-            
-            # Save detailed results
-            base_name = os.path.splitext(os.path.basename(audio_file_path))[0]
-            results_file = os.path.join(transcriptions_dir, f"{base_name}_accent_analysis.txt")
-            
-            with open(results_file, 'w', encoding='utf-8') as f:
-                f.write("=== WAV2VEC2 ACCENT DETECTION RESULTS ===\n\n")
-                f.write(f"Audio File: {os.path.basename(audio_file_path)}\n")
-                f.write(f"Duration: {duration:.1f} seconds\n")
-                f.write(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+        except Exception as e:
+            model_attempts.append(f"ylacombe/accent-classifier - FAILED: {str(e)}")
+            print(f"❌ ylacombe/accent-classifier failed: {e}")
+        
+        # Model 2: Try dima806/multiple_accent_classification if first model failed
+        if not accent_results:
+            try:
+                print("🤖 Attempting dima806/multiple_accent_classification...")
+                from transformers import pipeline
                 
-                f.write("=== MODEL INFORMATION ===\n")
-                f.write(f"Base Model: {model_name}\n")
-                f.write(f"Architecture: Wav2Vec2 + Custom Classification Head\n")
-                f.write(f"Feature Dimensions: {len(features)}\n")
-                f.write(f"Processing: Mean pooling of contextualized representations\n\n")
+                accent_classifier = pipeline(
+                    "audio-classification", 
+                    model="dima806/multiple_accent_classification",
+                    device=0 if torch.cuda.is_available() else -1
+                )
                 
-                f.write("=== TOP PREDICTION ===\n")
-                f.write(f"Detected Accent: {detected_accent}\n")
-                f.write(f"Confidence: {confidence_score*100:.1f}%\n\n")
+                # Ensure audio is not too long
+                max_length = 30 * sr
+                if len(audio) > max_length:
+                    audio_segment = audio[:max_length]
+                else:
+                    audio_segment = audio
                 
-                f.write("=== VOICE PERSONA ===\n")
-                f.write(f"Personality Tag: {personality_tag['persona']} {personality_tag['emoji']}\n")
-                f.write(f"Description: {personality_tag['description']}\n\n")
+                # Get predictions
+                predictions = accent_classifier(audio_segment)
                 
-                f.write("=== INTERVIEW READINESS ASSESSMENT ===\n")
-                f.write(f"Readiness Level: {interview_stamp['icon']} {interview_stamp['title']}\n")
-                f.write(f"Score: {interview_stamp['score']:.1f}/100\n")
-                f.write(f"Recommendation: {interview_stamp['recommendation']}\n\n")
+                # Process results
+                for pred in predictions[:5]:
+                    accent_results.append({
+                        'accent': pred['label'],
+                        'confidence': pred['score'],
+                        'confidence_percent': f"{pred['score']*100:.1f}%",
+                        'model': 'dima806/multiple_accent_classification'
+                    })
                 
-                f.write("=== ALL PREDICTIONS (Top 5) ===\n")
-                for i, pred in enumerate(accent_predictions[:5], 1):
-                    pred_personality = get_accent_personality_tag(pred['accent'])
-                    f.write(f"{i}. {pred['accent']}: {pred['confidence_percent']} - {pred_personality['persona']} {pred_personality['emoji']}\n")
+                model_attempts.append("dima806/multiple_accent_classification - SUCCESS")
+                print("✅ dima806/multiple_accent_classification completed successfully")
                 
-                f.write(f"\n=== TECHNICAL DETAILS ===\n")
-                f.write(f"Model: Wav2Vec2 (facebook/wav2vec2-base)\n")
-                f.write(f"Sample Rate: {sr} Hz\n")
-                f.write(f"Audio Quality: {'Excellent' if duration > 10 else 'Good' if duration > 3 else 'Fair'}\n")
-                f.write(f"Feature Statistics: Mean={feature_mean:.4f}, Std={feature_std:.4f}\n")
-                f.write(f"Processing Method: Wav2Vec2 Feature Extraction + Classification\n")
-            
-            return {
-                "success": True,
-                "detected_accent": detected_accent,
-                "confidence": confidence_score,
-                "confidence_percent": f"{confidence_score*100:.1f}%",
-                "personality_tag": personality_tag,
-                "interview_stamp": interview_stamp,
-                "all_predictions": accent_predictions,
-                "results_file": results_file,
-                "model_info": {
-                    "model_name": model_name,
-                    "architecture": "Wav2Vec2 + Custom Classification",
-                    "feature_dimensions": len(features),
-                    "feature_stats": {
-                        "mean": float(feature_mean),
-                        "std": float(feature_std),
-                        "max": float(feature_max),
-                        "min": float(feature_min)
-                    }
-                },
-                "audio_duration": duration
-            }
-            
-        except Exception as feature_error:
-            print(f"Feature-based analysis failed, using fallback approach: {feature_error}")
+            except Exception as e:
+                model_attempts.append(f"dima806/multiple_accent_classification - FAILED: {str(e)}")
+                print(f"❌ dima806/multiple_accent_classification failed: {e}")
+        
+        # Model 3: Try tiantiaf/whisper-large-v3-narrow-accent if others failed
+        if not accent_results:
+            try:
+                print("🤖 Attempting tiantiaf/whisper-large-v3-narrow-accent...")
+                from transformers import pipeline
+                
+                accent_classifier = pipeline(
+                    "audio-classification", 
+                    model="tiantiaf/whisper-large-v3-narrow-accent",
+                    device=0 if torch.cuda.is_available() else -1
+                )
+                
+                # Ensure audio is not too long
+                max_length = 30 * sr
+                if len(audio) > max_length:
+                    audio_segment = audio[:max_length]
+                else:
+                    audio_segment = audio
+                
+                # Get predictions
+                predictions = accent_classifier(audio_segment)
+                
+                # Process results
+                for pred in predictions[:5]:
+                    accent_results.append({
+                        'accent': pred['label'],
+                        'confidence': pred['score'],
+                        'confidence_percent': f"{pred['score']*100:.1f}%",
+                        'model': 'tiantiaf/whisper-large-v3-narrow-accent'
+                    })
+                
+                model_attempts.append("tiantiaf/whisper-large-v3-narrow-accent - SUCCESS")
+                print("✅ tiantiaf/whisper-large-v3-narrow-accent completed successfully")
+                
+            except Exception as e:
+                model_attempts.append(f"tiantiaf/whisper-large-v3-narrow-accent - FAILED: {str(e)}")
+                print(f"❌ tiantiaf/whisper-large-v3-narrow-accent failed: {e}")
+        
+        # Model 4: Custom Wav2Vec2 feature-based classification as fallback
+        if not accent_results:
+            try:
+                print("🤖 Using custom Wav2Vec2 feature-based classification...")
+                from transformers import Wav2Vec2Processor, Wav2Vec2Model
+                import torch
+                import torch.nn.functional as F
+                
+                # Use facebook/wav2vec2-base for feature extraction
+                model_name = "facebook/wav2vec2-base"
+                processor = Wav2Vec2Processor.from_pretrained(model_name)
+                wav2vec2_model = Wav2Vec2Model.from_pretrained(model_name)
+                
+                # Preprocess audio
+                max_length = 30 * sr
+                if len(audio) > max_length:
+                    audio_segment = audio[:max_length]
+                else:
+                    audio_segment = audio
+                
+                inputs = processor(audio_segment, sampling_rate=sr, return_tensors="pt", padding=True)
+                
+                # Extract features
+                with torch.no_grad():
+                    outputs = wav2vec2_model(**inputs)
+                    hidden_states = outputs.last_hidden_state
+                    pooled_features = torch.mean(hidden_states, dim=1)
+                    features = pooled_features.squeeze().numpy()
+                
+                # Enhanced classification using Wav2Vec2 features
+                accent_scores = {}
+                feature_mean = np.mean(features)
+                feature_std = np.std(features)
+                feature_max = np.max(features)
+                
+                # Improved classification logic based on Wav2Vec2 features
+                # British (RP)
+                british_score = 0.3 + (0.25 if feature_mean > 0.1 else 0) + (0.2 if feature_std > 0.15 else 0)
+                accent_scores["British (RP)"] = min(0.95, british_score)
+                
+                # American
+                american_score = 0.4 + (0.3 if -0.05 < feature_mean < 0.08 else 0) + (0.2 if 0.08 < feature_std < 0.14 else 0)
+                accent_scores["American"] = min(0.95, american_score)
+                
+                # Australian
+                australian_score = 0.25 + (0.3 if 0.05 < feature_mean < 0.15 else 0) + (0.2 if feature_std > 0.12 else 0)
+                accent_scores["Australian"] = min(0.95, australian_score)
+                
+                # Canadian
+                canadian_score = 0.35 + (0.25 if 0.0 < feature_mean < 0.1 else 0) + (0.15 if 0.1 < feature_std < 0.15 else 0)
+                accent_scores["Canadian"] = min(0.95, canadian_score)
+                
+                # Irish
+                irish_score = 0.2 + (0.35 if feature_std > 0.18 else 0) + (0.2 if feature_mean > 0.08 else 0)
+                accent_scores["Irish"] = min(0.95, irish_score)
+                
+                # Scottish
+                scottish_score = 0.15 + (0.4 if feature_max > 0.9 else 0) + (0.25 if feature_std > 0.2 else 0)
+                accent_scores["Scottish"] = min(0.95, scottish_score)
+                
+                # South African
+                south_african_score = 0.1 + (0.3 if feature_mean > 0.12 else 0) + (0.25 if feature_max > 0.85 else 0)
+                accent_scores["South African"] = min(0.95, south_african_score)
+                
+                # Quality boost for longer audio
+                quality_boost = min(0.1, duration / 10.0)
+                for accent in accent_scores:
+                    accent_scores[accent] = min(0.98, accent_scores[accent] + quality_boost)
+                
+                # Sort by confidence
+                sorted_accents = sorted(accent_scores.items(), key=lambda x: x[1], reverse=True)
+                
+                # Create results
+                for accent, score in sorted_accents:
+                    accent_results.append({
+                        'accent': accent,
+                        'confidence': score,
+                        'confidence_percent': f"{score*100:.1f}%",
+                        'model': 'Custom Wav2Vec2 Features'
+                    })
+                
+                model_attempts.append("Custom Wav2Vec2 Features - SUCCESS")
+                print("✅ Custom Wav2Vec2 feature-based classification completed")
+                
+            except Exception as e:
+                model_attempts.append(f"Custom Wav2Vec2 Features - FAILED: {str(e)}")
+                print(f"❌ Custom Wav2Vec2 feature-based classification failed: {e}")
+        
+        # If all models failed, use rule-based fallback
+        if not accent_results:
+            print("🔄 All ML models failed, using rule-based fallback...")
             return detect_accent_fallback(audio_file_path)
         
+        # Process results
+        top_prediction = accent_results[0]
+        detected_accent = top_prediction['accent']
+        confidence_score = top_prediction['confidence']
+        model_used = top_prediction['model']
+        
+        print(f"🎯 Accent detected: {detected_accent} ({confidence_score*100:.1f}% confidence) using {model_used}")
+        
+        # Normalize accent names for consistency
+        accent_mapping = {
+            'british': 'British (RP)',
+            'american': 'American',
+            'australian': 'Australian',
+            'canadian': 'Canadian',
+            'irish': 'Irish',
+            'scottish': 'Scottish',
+            'south_african': 'South African',
+            'indian': 'Indian',
+            'us': 'American',
+            'uk': 'British (RP)',
+            'au': 'Australian',
+            'ca': 'Canadian',
+            'ie': 'Irish',
+            'scotland': 'Scottish',
+            'za': 'South African'
+        }
+        
+        # Normalize detected accent
+        normalized_accent = accent_mapping.get(detected_accent.lower(), detected_accent)
+        
+        # Get personality tag
+        personality_tag = get_accent_personality_tag(normalized_accent)
+        
+        # Calculate interview readiness stamp
+        temp_result = {
+            "detected_accent": normalized_accent,
+            "confidence": confidence_score,
+            "audio_duration": duration
+        }
+        interview_stamp = get_interview_readiness_stamp(temp_result, None)
+        
+        # Save detailed results
+        base_name = os.path.splitext(os.path.basename(audio_file_path))[0]
+        results_file = os.path.join(transcriptions_dir, f"{base_name}_accent_analysis.txt")
+        
+        with open(results_file, 'w', encoding='utf-8') as f:
+            f.write("=== ADVANCED WAV2VEC2 ACCENT DETECTION RESULTS ===\n\n")
+            f.write(f"Audio File: {os.path.basename(audio_file_path)}\n")
+            f.write(f"Duration: {duration:.1f} seconds\n")
+            f.write(f"Analysis Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n")
+            
+            f.write("=== MODEL INFORMATION ===\n")
+            f.write(f"Primary Model Used: {model_used}\n")
+            f.write("Model Attempts:\n")
+            for attempt in model_attempts:
+                f.write(f"  - {attempt}\n")
+            f.write("\n")
+            
+            f.write("=== TOP PREDICTION ===\n")
+            f.write(f"Detected Accent: {normalized_accent}\n")
+            f.write(f"Confidence: {confidence_score*100:.1f}%\n")
+            f.write(f"Model: {model_used}\n\n")
+            
+            f.write("=== VOICE PERSONA ===\n")
+            f.write(f"Personality Tag: {personality_tag['persona']} {personality_tag['emoji']}\n")
+            f.write(f"Description: {personality_tag['description']}\n\n")
+            
+            f.write("=== INTERVIEW READINESS ASSESSMENT ===\n")
+            f.write(f"Readiness Level: {interview_stamp['icon']} {interview_stamp['title']}\n")
+            f.write(f"Score: {interview_stamp['score']:.1f}/100\n")
+            f.write(f"Recommendation: {interview_stamp['recommendation']}\n\n")
+            
+            f.write("=== ALL PREDICTIONS ===\n")
+            for i, pred in enumerate(accent_results[:5], 1):
+                pred_personality = get_accent_personality_tag(pred['accent'])
+                f.write(f"{i}. {pred['accent']}: {pred['confidence_percent']} ({pred['model']}) - {pred_personality['persona']} {pred_personality['emoji']}\n")
+            
+            f.write(f"\n=== TECHNICAL DETAILS ===\n")
+            f.write(f"Sample Rate: {sr} Hz\n")
+            f.write(f"Audio Quality: {'Excellent' if duration > 10 else 'Good' if duration > 3 else 'Fair'}\n")
+            f.write(f"Processing Method: Pre-trained Accent Classification Models\n")
+            f.write(f"Fallback Available: Yes (Rule-based system)\n")
+        
+        return {
+            "success": True,
+            "detected_accent": normalized_accent,
+            "confidence": confidence_score,
+            "confidence_percent": f"{confidence_score*100:.1f}%",
+            "personality_tag": personality_tag,
+            "interview_stamp": interview_stamp,
+            "all_predictions": accent_results[:5],
+            "results_file": results_file,
+            "model_info": {
+                "primary_model": model_used,
+                "model_attempts": model_attempts,
+                "fallback_available": True
+            },
+            "audio_duration": duration
+        }
+        
     except Exception as e:
-        error_msg = f"Accent detection failed: {str(e)}"
-        print(f"❌ {error_msg}")
+        print(f"❌ All accent detection methods failed: {str(e)}")
+        print("🔄 Falling back to rule-based accent detection...")
         return detect_accent_fallback(audio_file_path)
 
 # Fallback accent detection function

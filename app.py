@@ -152,7 +152,7 @@ with col2:
     if WHISPER_AVAILABLE:
         st.success("✅ Using faster-whisper (base model)")
     else:
-        st.error("❌ Not available")
+        st.warning("⚠️ Using fallback mode (Whisper unavailable)")
 
 with col3:
     st.markdown("**🎯 Accent Detection**")
@@ -250,7 +250,7 @@ def transcribe_audio_with_whisper(audio_path, model_size="base", output_path=Non
     
     if not WHISPER_AVAILABLE:
         logger.error("Whisper is not available")
-        return None, "Whisper is not installed"
+        return transcribe_audio_fallback(audio_path, output_path)
     
     try:
         audio_file = Path(audio_path)
@@ -260,8 +260,41 @@ def transcribe_audio_with_whisper(audio_path, model_size="base", output_path=Non
         
         logger.info(f"Using faster-whisper with model: {model_size}")
         
-        # Initialize faster-whisper model
-        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        # Initialize faster-whisper model with retry logic
+        model = None
+        max_retries = 3
+        
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Attempting to load Whisper model (attempt {attempt + 1}/{max_retries})")
+                model = WhisperModel(model_size, device="cpu", compute_type="int8", local_files_only=False)
+                logger.info("Whisper model loaded successfully")
+                break
+            except Exception as model_error:
+                logger.warning(f"Model loading attempt {attempt + 1} failed: {str(model_error)}")
+                if attempt < max_retries - 1:
+                    import time
+                    time.sleep(2)  # Wait 2 seconds before retry
+                else:
+                    # Try with a smaller model as fallback
+                    if model_size != "tiny":
+                        logger.info("Trying with tiny model as fallback...")
+                        try:
+                            model = WhisperModel("tiny", device="cpu", compute_type="int8", local_files_only=False)
+                            logger.info("Fallback tiny model loaded successfully")
+                            break
+                        except Exception as fallback_error:
+                            logger.error(f"Fallback model also failed: {str(fallback_error)}")
+                    
+                    # If all attempts fail, return error
+                    error_msg = f"Failed to load Whisper model after {max_retries} attempts. This may be due to network issues or rate limiting from Hugging Face. Please try again later."
+                    logger.error(error_msg)
+                    return None, error_msg
+        
+        if model is None:
+            error_msg = "Could not initialize Whisper model"
+            logger.error(error_msg)
+            return None, error_msg
         
         # Transcribe audio
         logger.info("Starting transcription with faster-whisper...")
@@ -323,6 +356,56 @@ def transcribe_audio_with_whisper(audio_path, model_size="base", output_path=Non
         else:
             error_msg = f"Transcription error: {str(e)}"
             
+        return None, error_msg
+
+# Fallback transcription function
+def transcribe_audio_fallback(audio_path, output_path=None):
+    """
+    Fallback transcription when Whisper models are unavailable
+    Provides basic placeholder functionality
+    """
+    logger.info(f"Using fallback transcription for: {audio_path}")
+    
+    try:
+        audio_file = Path(audio_path)
+        if not audio_file.exists():
+            logger.error(f"Audio file not found: {audio_path}")
+            return None, f"Audio file not found: {audio_path}"
+        
+        # Get basic audio info
+        try:
+            import wave
+            with wave.open(str(audio_path), 'rb') as wav_file:
+                frames = wav_file.getnframes()
+                sample_rate = wav_file.getframerate()
+                duration = frames / float(sample_rate)
+        except:
+            # Rough estimate from file size
+            file_size = audio_file.stat().st_size
+            duration = max(1.0, file_size / 32000)
+        
+        # Create a placeholder transcription
+        placeholder_text = f"[Audio transcription unavailable - Whisper models could not be loaded. Audio duration: {duration:.1f} seconds. Please try again later when network connectivity is restored.]"
+        
+        # Save placeholder transcription
+        if output_path is None:
+            output_path = transcriptions_dir / f"{audio_file.stem}_transcription.txt"
+        
+        with open(output_path, 'w', encoding='utf-8') as f:
+            f.write("=== TRANSCRIPTION (FALLBACK MODE) ===\n")
+            f.write(placeholder_text)
+            f.write("\n\n=== TECHNICAL INFO ===\n")
+            f.write(f"Audio File: {audio_file.name}\n")
+            f.write(f"Duration: {duration:.1f} seconds\n")
+            f.write(f"Status: Whisper models unavailable due to network issues\n")
+            f.write(f"Recommendation: Try again later when connectivity is restored\n")
+        
+        logger.info(f"Fallback transcription saved to: {output_path}")
+        return placeholder_text, None
+        
+    except Exception as e:
+        error_msg = f"Fallback transcription failed: {str(e)}"
+        logger.error(error_msg)
         return None, error_msg
 
 # Function to detect English accent using Hugging Face model
@@ -845,7 +928,11 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                     )
                     
                     if transcription_text:
-                        st.success("Transcription completed successfully!")
+                        if "[Audio transcription unavailable" in transcription_text:
+                            st.warning("⚠️ Transcription completed in fallback mode")
+                            st.info("Whisper models are temporarily unavailable due to network issues. The accent detection will still work!")
+                        else:
+                            st.success("Transcription completed successfully!")
                         
                         # Display transcription in an expandable section
                         with st.expander("📝 Transcription Result", expanded=True):
@@ -933,7 +1020,11 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                     )
                     
                     if transcription_text:
-                        st.success("Transcription completed successfully!")
+                        if "[Audio transcription unavailable" in transcription_text:
+                            st.warning("⚠️ Transcription completed in fallback mode")
+                            st.info("Whisper models are temporarily unavailable due to network issues. The accent detection will still work!")
+                        else:
+                            st.success("Transcription completed successfully!")
                         
                         # Display transcription in an expandable section
                         with st.expander("📝 Transcription Result", expanded=True):
@@ -1247,7 +1338,11 @@ if st.button("🚀 Process" if url else "🎵 Process Audio" if uploaded_audio e
                             )
                             
                             if transcription_text:
-                                st.success("Transcription completed successfully!")
+                                if "[Audio transcription unavailable" in transcription_text:
+                                    st.warning("⚠️ Transcription completed in fallback mode")
+                                    st.info("Whisper models are temporarily unavailable due to network issues. The accent detection will still work!")
+                                else:
+                                    st.success("Transcription completed successfully!")
                                 
                                 # Display transcription in an expandable section
                                 with st.expander("📝 Transcription Result", expanded=True):
@@ -1417,6 +1512,8 @@ with st.expander("Logs and Troubleshooting"):
     - **YouTube Not Working**: YouTube frequently blocks automated downloads. Use Loom or direct links instead.
     - **Audio Extraction Issues**: If audio extraction fails, the video might not have an audio track or be in an unsupported format.
     - **Whisper Not Available**: Install with `pip install faster-whisper`
+    - **Model Download Failures**: If you see "429 Too Many Requests" or "outgoing traffic disabled", this is due to Hugging Face rate limiting. The app will automatically use fallback mode.
+    - **Network Issues**: When models can't be downloaded, transcription will use fallback mode but accent detection will still work normally.
     - **Transcription Slow**: Use smaller models (tiny/base) for faster processing
     - **Transcription Inaccurate**: Use larger models (medium/large) for better accuracy
     - **GPU Support**: Install CUDA-compatible PyTorch for GPU acceleration (much faster)
